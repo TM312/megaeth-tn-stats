@@ -187,6 +187,20 @@ describe('Statistics Functions', () => {
             expect(result.averageBlockTimeSeconds).toBe(0);
             expect(result.totalBlocks).toBe(0);
         });
+
+        it('should handle unsorted blocks correctly', () => {
+            const blocks: Block[] = [
+                { hash: '0x3', number: 102, timestamp: '1025', transaction_count: 15 },
+                { hash: '0x1', number: 100, timestamp: '1000', transaction_count: 10 },
+                { hash: '0x2', number: 101, timestamp: '1010', transaction_count: 5 },
+            ];
+
+            const result = computeBlockTimeStats(blocks);
+
+            expect(result.averageBlockTimeSeconds).toBeCloseTo(12.5, 1);
+            expect(result.minBlockTimeSeconds).toBe(10);
+            expect(result.maxBlockTimeSeconds).toBe(15);
+        });
     });
 
     describe('computeTopAddresses', () => {
@@ -213,6 +227,17 @@ describe('Statistics Functions', () => {
             const result = computeTopAddresses([]);
 
             expect(result.length).toBe(0);
+        });
+
+        it('should handle limit larger than available addresses', () => {
+            const transactions: Transaction[] = [
+                { hash: '0x1', from: '0xA', to: '0xB', value: '0', gas_price: '1000', gas_used: '21000', gas: '21000', timestamp: '1000' },
+                { hash: '0x2', from: '0xA', to: '0xC', value: '0', gas_price: '1000', gas_used: '21000', gas: '21000', timestamp: '1000' },
+            ];
+
+            const result = computeTopAddresses(transactions, 10);
+
+            expect(result.length).toBe(3);
         });
     });
 

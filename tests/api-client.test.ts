@@ -7,8 +7,10 @@ const mockAxiosInstance = {
 } as any;
 
 jest.mock('axios', () => ({
+    __esModule: true,
     default: {
         create: jest.fn(() => mockAxiosInstance),
+        isAxiosError: jest.fn((error: any) => error?.isAxiosError === true),
     },
 }));
 
@@ -21,51 +23,76 @@ describe('BlockscoutApiClient', () => {
     });
 
     describe('getLatestBlocks', () => {
-        it('should fetch latest blocks successfully', async () => {
-            const mockBlocks: Block[] = [
-                {
-                    hash: '0x123',
-                    number: 100,
-                    timestamp: '1000000',
-                    transaction_count: 10,
-                },
-                {
-                    hash: '0x456',
-                    number: 101,
-                    timestamp: '1000010',
-                    transaction_count: 5,
-                },
-            ];
+        it('should fetch latest blocks successfully and transform API response', async () => {
+            const mockApiResponse = {
+                items: [
+                    {
+                        hash: '0x123',
+                        height: 100,
+                        timestamp: '2024-01-01T00:00:00.000000Z',
+                        transactions_count: 10,
+                    },
+                    {
+                        hash: '0x456',
+                        height: 101,
+                        timestamp: '2024-01-01T00:00:10.000000Z',
+                        transactions_count: 5,
+                    },
+                ],
+            };
 
             mockAxiosInstance.get.mockResolvedValueOnce({
-                data: {
-                    status: '1',
-                    message: 'OK',
-                    result: {
-                        items: mockBlocks,
-                        next_page_path: null,
-                    },
-                },
+                data: mockApiResponse,
             });
 
             const result = await client.getLatestBlocks(2);
 
-            expect(result).toEqual(mockBlocks);
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({
+                hash: '0x123',
+                number: 100,
+                timestamp: '1704067200',
+                transaction_count: 10,
+            });
+            expect(result[1]).toEqual({
+                hash: '0x456',
+                number: 101,
+                timestamp: '1704067210',
+                transaction_count: 5,
+            });
             expect(mockAxiosInstance.get).toHaveBeenCalledWith('/v2/blocks', {
                 params: { page: 1, offset: 2 },
             });
         });
 
-        it('should handle API errors', async () => {
+        it('should handle empty items array', async () => {
             mockAxiosInstance.get.mockResolvedValueOnce({
                 data: {
-                    status: '0',
-                    message: 'Error occurred',
-                    result: null,
+                    items: [],
                 },
             });
 
-            await expect(client.getLatestBlocks(10)).rejects.toThrow('API error: Error occurred');
+            const result = await client.getLatestBlocks(10);
+
+            expect(result).toEqual([]);
+        });
+
+        it('should handle missing items in response', async () => {
+            mockAxiosInstance.get.mockResolvedValueOnce({
+                data: {},
+            });
+
+            await expect(client.getLatestBlocks(10)).rejects.toThrow('API error: Invalid response format');
+        });
+
+        it('should handle API errors with error response data', async () => {
+            mockAxiosInstance.get.mockResolvedValueOnce({
+                data: {
+                    error: 'Invalid request',
+                },
+            });
+
+            await expect(client.getLatestBlocks(10)).rejects.toThrow(/API error/);
         });
 
         it('should handle rate limit errors', async () => {
@@ -89,57 +116,72 @@ describe('BlockscoutApiClient', () => {
     });
 
     describe('getBlock', () => {
-        it('should fetch a specific block successfully', async () => {
-            const mockBlock: Block = {
+        it('should fetch a specific block successfully and transform API response', async () => {
+            const mockApiResponse = {
                 hash: '0x123',
-                number: 100,
-                timestamp: '1000000',
-                transaction_count: 10,
+                height: 100,
+                timestamp: '2024-01-01T00:00:00.000000Z',
+                transactions_count: 10,
             };
 
             mockAxiosInstance.get.mockResolvedValueOnce({
-                data: {
-                    status: '1',
-                    message: 'OK',
-                    result: mockBlock,
-                },
+                data: mockApiResponse,
             });
 
             const result = await client.getBlock(100);
 
-            expect(result).toEqual(mockBlock);
+            expect(result).toEqual({
+                hash: '0x123',
+                number: 100,
+                timestamp: '1704067200',
+                transaction_count: 10,
+            });
             expect(mockAxiosInstance.get).toHaveBeenCalledWith('/v2/blocks/100');
+        });
+
+        it('should handle missing data in response', async () => {
+            mockAxiosInstance.get.mockResolvedValueOnce({
+                data: null,
+            });
+
+            await expect(client.getBlock(100)).rejects.toThrow('API error: Invalid response format');
         });
     });
 
     describe('getTransactions', () => {
-        it('should fetch transactions successfully', async () => {
-            const mockTransactions: Transaction[] = [
-                {
-                    hash: '0xtx1',
-                    from: '0xfrom1',
-                    to: '0xto1',
-                    value: '1000000000000000000',
-                    gas_price: '20000000000',
-                    gas_used: '21000',
-                    gas: '21000',
-                    timestamp: '1000000',
-                },
-            ];
+        it('should fetch transactions successfully and transform API response', async () => {
+            const mockApiResponse = {
+                items: [
+                    {
+                        hash: '0xtx1',
+                        from: { hash: '0xfrom1' },
+                        to: { hash: '0xto1' },
+                        value: '1000000000000000000',
+                        gas_price: '20000000000',
+                        gas_used: '21000',
+                        gas: '21000',
+                        timestamp: '2024-01-01T00:00:00.000000Z',
+                    },
+                ],
+            };
 
             mockAxiosInstance.get.mockResolvedValueOnce({
-                data: {
-                    status: '1',
-                    message: 'OK',
-                    result: {
-                        items: mockTransactions,
-                    },
-                },
+                data: mockApiResponse,
             });
 
             const result = await client.getTransactions({ block_number: 100, offset: 50 });
 
-            expect(result).toEqual(mockTransactions);
+            expect(result).toHaveLength(1);
+            expect(result[0]).toEqual({
+                hash: '0xtx1',
+                from: '0xfrom1',
+                to: '0xto1',
+                value: '1000000000000000000',
+                gas_price: '20000000000',
+                gas_used: '21000',
+                gas: '21000',
+                timestamp: '1704067200',
+            });
             expect(mockAxiosInstance.get).toHaveBeenCalledWith('/v2/transactions', {
                 params: {
                     page: 1,
@@ -147,6 +189,68 @@ describe('BlockscoutApiClient', () => {
                     block_number: 100,
                 },
             });
+        });
+
+        it('should handle contract deployment transactions (null to)', async () => {
+            const mockApiResponse = {
+                items: [
+                    {
+                        hash: '0xtx1',
+                        from: { hash: '0xfrom1' },
+                        to: null,
+                        value: '0',
+                        gas_price: '20000000000',
+                        gas_used: '21000',
+                        gas: '21000',
+                        timestamp: '2024-01-01T00:00:00.000000Z',
+                    },
+                ],
+            };
+
+            mockAxiosInstance.get.mockResolvedValueOnce({
+                data: mockApiResponse,
+            });
+
+            const result = await client.getTransactions({ block_number: 100 });
+
+            expect(result[0].to).toBeNull();
+        });
+
+        it('should handle missing from/to hash fields', async () => {
+            const mockApiResponse = {
+                items: [
+                    {
+                        hash: '0xtx1',
+                        from: null,
+                        to: { hash: '0xto1' },
+                        value: '0',
+                        gas_price: '20000000000',
+                        gas_used: '21000',
+                        gas: '21000',
+                        timestamp: '2024-01-01T00:00:00.000000Z',
+                    },
+                ],
+            };
+
+            mockAxiosInstance.get.mockResolvedValueOnce({
+                data: mockApiResponse,
+            });
+
+            const result = await client.getTransactions({ block_number: 100 });
+
+            expect(result[0].from).toBe('');
+        });
+
+        it('should handle empty items array', async () => {
+            mockAxiosInstance.get.mockResolvedValueOnce({
+                data: {
+                    items: [],
+                },
+            });
+
+            const result = await client.getTransactions({ block_number: 100 });
+
+            expect(result).toEqual([]);
         });
     });
 
